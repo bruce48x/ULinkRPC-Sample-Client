@@ -1,0 +1,3 @@
+[submodule "ulinkrpc-sample-server"]
+	path = ulinkrpc-sample-server
+	url = https://github.com/bruce48x/ULinkRPC-Sample-Server
