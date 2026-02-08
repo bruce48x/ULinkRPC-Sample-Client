@@ -50,6 +50,6 @@
     "com.unity.modules.wind": "1.0.0",
     "com.unity.modules.xr": "1.0.0",
     "com.github-glitchenzo.nugetforunity": "4.5.0",
-    "com.ulinkrpc-sample-server.shared": "file:../../ulinkrpc-sample-client/ulinkrpc-sample-server/Shared/"
+    "com.ulinkrpc-sample-server.shared": "file:../ulinkrpc-sample-server/Shared/"
   }
 }

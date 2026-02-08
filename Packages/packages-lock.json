@@ -8,7 +8,7 @@
       "url": "https://package.openupm.com"
     },
     "com.ulinkrpc-sample-server.shared": {
-      "version": "file:../../ulinkrpc-sample-client/ulinkrpc-sample-server/Shared/",
+      "version": "file:../ulinkrpc-sample-server/Shared/",
       "depth": 0,
       "source": "local",
       "dependencies": {}
