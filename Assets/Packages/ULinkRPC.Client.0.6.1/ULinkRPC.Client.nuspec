@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>ULinkRPC.Client</id>
+    <version>0.6.1</version>
+    <authors>ULinkRPC</authors>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <readme>README.md</readme>
+    <description>ULinkRPC client runtime and client-side transports.</description>
+    <tags>rpc unity client tcp loopback</tags>
+    <repository type="git" commit="90a1cdc64fe79a54db51204d1cac2ad78f463e4b" />
+    <dependencies>
+      <group targetFramework="net10.0">
+        <dependency id="ULinkRPC.Core" version="0.5.0" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework=".NETStandard2.1">
+        <dependency id="ULinkRPC.Core" version="0.5.0" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>

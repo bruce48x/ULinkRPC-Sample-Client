@@ -1,0 +1,18 @@
+{
+	"name": "Rpc",
+	"references": [
+    "Shared",
+    "ULinkRPC.Core",
+    "ULinkRPC.Client",
+    "ULinkRPC.Generated"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
