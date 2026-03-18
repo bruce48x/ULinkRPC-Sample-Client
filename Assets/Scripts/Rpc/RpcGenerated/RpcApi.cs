@@ -48,7 +48,7 @@ namespace ULinkRPC.Client
         public RpcClient(RpcClientOptions options)
         {
             Options = options ?? throw new ArgumentNullException(nameof(options));
-            _runtime = new RpcClientRuntime(options.Transport, options.Serializer);
+            _runtime = new RpcClientRuntime(options.Transport, options.Serializer, options.KeepAlive);
         }
 
         public RpcClient(RpcClientOptions options, RpcCallbackBindings callbacks) : this(options)

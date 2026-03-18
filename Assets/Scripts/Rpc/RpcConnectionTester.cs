@@ -1,8 +1,19 @@
-using System.Collections;
+#nullable enable
+
+using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Shared.Interfaces;
+using Rpc.Generated;
+using ULinkRPC.Client;
+using ULinkRPC.Transport.Kcp;
+using ULinkRPC.Serializer.MemoryPack;
 using UnityEngine;
 
-[Serializable]
+namespace Rpc.Testing
+{
+    [Serializable]
     public sealed class RpcEndpointSettings
     {
         public string Host = "127.0.0.1";
@@ -78,7 +89,7 @@ using UnityEngine;
                     _callbacks);
                 await _connection.ConnectAsync(_cts.Token);
                 _connection.Disconnected += OnDisconnected;
-                _player = _connection.Api.Game.Player;
+                _player = _connection.Api.Shared.Player;
 
                 var reply = await _player.LoginAsync(new LoginRequest
                 {
@@ -104,11 +115,11 @@ using UnityEngine;
             {
                 try
                 {
-                    var step = await _player!.IncrStep();
+                    await _player!.Move(new MoveRequest() { Direction = 1, PlayerId = "" });
                     if (_cts.IsCancellationRequested || _stopped)
                         return;
 
-                    Debug.Log($"[KCP] {Account} step={step}");
+                    Debug.Log($"{Account} Moved");
                     await Task.Delay(TimeSpan.FromSeconds(interval), _cts.Token);
                 }
                 catch (OperationCanceledException)
@@ -189,9 +200,10 @@ using UnityEngine;
                 _owner = owner;
             }
 
-            public override void OnNotify(string message)
+            void OnMove(List<PlayerPosition> playerPositions)
             {
-                _owner.HandleNotify(message);
+                Debug.Log($"OnMove {playerPositions.Count}");
             }
         }
     }
+}
