@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Shared.Interfaces;
 using Rpc.Generated;
 using ULinkRPC.Client;
-using ULinkRPC.Transport.Kcp;
+using ULinkRPC.Transport.Tcp;
 using ULinkRPC.Serializer.MemoryPack;
 using UnityEngine;
 
@@ -19,7 +19,7 @@ namespace Rpc.Testing
         public string Host = "127.0.0.1";
         public int Port = 20000;
 
-        public static RpcEndpointSettings CreateKcp(string host, int port)
+        public static RpcEndpointSettings CreateTcp(string host, int port)
         {
             return new RpcEndpointSettings
             {
@@ -31,7 +31,7 @@ namespace Rpc.Testing
 
     public sealed class RpcConnectionTester : MonoBehaviour
     {
-        [SerializeField] private RpcEndpointSettings _endpoint = RpcEndpointSettings.CreateKcp("127.0.0.1", 20000);
+        [SerializeField] private RpcEndpointSettings _endpoint = RpcEndpointSettings.CreateTcp("127.0.0.1", 20000);
 
         [Header("Login")] public string Account = "a";
         public string Password = "b";
@@ -78,13 +78,13 @@ namespace Rpc.Testing
             if (_cleanupStarted || _connection is not null)
                 return;
 
-            Debug.Log($"[KCP] Connecting to {_endpoint.Host}:{_endpoint.Port}");
+            Debug.Log($"[TCP] Connecting to {_endpoint.Host}:{_endpoint.Port}");
 
             try
             {
                 _connection = new RpcClient(
                     new RpcClientOptions(
-                        new KcpTransport(_endpoint.Host, _endpoint.Port),
+                        new TcpTransport(_endpoint.Host, _endpoint.Port),
                         new MemoryPackRpcSerializer()),
                     _callbacks);
                 await _connection.ConnectAsync(_cts.Token);
@@ -97,12 +97,12 @@ namespace Rpc.Testing
                     Password = Password
                 });
 
-                Debug.Log($"[KCP] Login ok: account={Account}, code={reply.Code}, token={reply.Token}");
+                Debug.Log($"[TCP] Login ok: account={Account}, code={reply.Code}, token={reply.Token}");
                 _pollingTask = RunPollingAsync();
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[KCP] Connect failed: {ex}");
+                Debug.LogError($"[TCP] Connect failed: {ex}");
                 await CleanupAsync();
             }
         }
@@ -115,7 +115,7 @@ namespace Rpc.Testing
             {
                 try
                 {
-                    await _player!.Move(new MoveRequest() { Direction = 1, PlayerId = "" });
+                    await _player!.Move(new MoveRequest() { Direction = 1, PlayerId = Account });
                     if (_cts.IsCancellationRequested || _stopped)
                         return;
 
@@ -128,7 +128,7 @@ namespace Rpc.Testing
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[KCP] Polling failed: {ex.Message}");
+                    Debug.LogWarning($"[TCP] Polling failed: {ex.Message}");
                     return;
                 }
             }
@@ -139,7 +139,7 @@ namespace Rpc.Testing
             if (_stopped)
                 return;
 
-            Debug.Log($"[KCP] Push: {message}");
+            Debug.Log($"[TCP] Push: {message}");
         }
 
         private void BeginShutdown()
@@ -186,9 +186,9 @@ namespace Rpc.Testing
             _connection = null;
 
             if (ex is null)
-                Debug.Log("[KCP] Disconnected.");
+                Debug.Log("[TCP] Disconnected.");
             else
-                Debug.LogWarning($"[KCP] Disconnected: {ex.Message}");
+                Debug.LogWarning($"[TCP] Disconnected: {ex.Message}");
         }
 
         private sealed class PlayerCallbacks : RpcClient.PlayerCallbackBase
@@ -200,10 +200,11 @@ namespace Rpc.Testing
                 _owner = owner;
             }
 
-            void OnMove(List<PlayerPosition> playerPositions)
+            public override void OnMove(List<PlayerPosition> playerPositions)
             {
                 Debug.Log($"OnMove {playerPositions.Count}");
             }
         }
     }
 }
+

@@ -158,7 +158,7 @@ MonoBehaviour:
   Account: a
   Password: b
   RequestIntervalSeconds: 1
-  AutoConnect: 1
+  AutoConnect: 0
 --- !u!4 &958379904
 Transform:
   m_ObjectHideFlags: 0
