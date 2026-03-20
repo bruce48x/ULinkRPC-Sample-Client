@@ -5,10 +5,9 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Shared.Interfaces;
-using Rpc.Generated;
 using ULinkRPC.Client;
-using ULinkRPC.Transport.Tcp;
 using ULinkRPC.Serializer.MemoryPack;
+using ULinkRPC.Transport.WebSocket;
 using UnityEngine;
 
 namespace Rpc.Testing
@@ -18,33 +17,48 @@ namespace Rpc.Testing
     {
         public string Host = "127.0.0.1";
         public int Port = 20000;
+        public string Path = "/ws";
 
-        public static RpcEndpointSettings CreateTcp(string host, int port)
+        public static RpcEndpointSettings CreateWebSocket(string host, int port, string path = "/ws")
         {
             return new RpcEndpointSettings
             {
                 Host = host,
-                Port = port
+                Port = port,
+                Path = path
             };
+        }
+
+        public string GetWebSocketUrl()
+        {
+            var normalizedPath = string.IsNullOrWhiteSpace(Path) ? "/ws" :
+                Path.StartsWith("/", StringComparison.Ordinal) ? Path : "/" + Path;
+
+            if (Host.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) ||
+                Host.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+                return $"{Host.TrimEnd('/')}{normalizedPath}";
+
+            return $"ws://{Host}:{Port}{normalizedPath}";
         }
     }
 
     public sealed class RpcConnectionTester : MonoBehaviour
     {
-        [SerializeField] private RpcEndpointSettings _endpoint = RpcEndpointSettings.CreateTcp("127.0.0.1", 20000);
+        [SerializeField]
+        private RpcEndpointSettings _endpoint = RpcEndpointSettings.CreateWebSocket("127.0.0.1", 20000);
 
         [Header("Login")] public string Account = "a";
         public string Password = "b";
 
         public float RequestIntervalSeconds = 1f;
         public bool AutoConnect = true;
+        private readonly RpcClient.RpcCallbackBindings _callbacks;
 
         private readonly CancellationTokenSource _cts = new();
-        private readonly RpcClient.RpcCallbackBindings _callbacks;
+        private bool _cleanupStarted;
         private RpcClient? _connection;
         private IPlayerService? _player;
         private Task? _pollingTask;
-        private bool _cleanupStarted;
         private bool _stopped;
 
         public RpcConnectionTester()
@@ -78,15 +92,11 @@ namespace Rpc.Testing
             if (_cleanupStarted || _connection is not null)
                 return;
 
-            Debug.Log($"[TCP] Connecting to {_endpoint.Host}:{_endpoint.Port}");
+            Debug.Log($"[WS] Connecting to {_endpoint.GetWebSocketUrl()}");
 
             try
             {
-                _connection = new RpcClient(
-                    new RpcClientOptions(
-                        new TcpTransport(_endpoint.Host, _endpoint.Port),
-                        new MemoryPackRpcSerializer()),
-                    _callbacks);
+                _connection = WebSocketRpcClientFactory.Create(_endpoint.Host, _endpoint.Port, _endpoint.Path, _callbacks);
                 await _connection.ConnectAsync(_cts.Token);
                 _connection.Disconnected += OnDisconnected;
                 _player = _connection.Api.Shared.Player;
@@ -97,12 +107,12 @@ namespace Rpc.Testing
                     Password = Password
                 });
 
-                Debug.Log($"[TCP] Login ok: account={Account}, code={reply.Code}, token={reply.Token}");
+                Debug.Log($"[WS] Login ok: account={Account}, code={reply.Code}, token={reply.Token}");
                 _pollingTask = RunPollingAsync();
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[TCP] Connect failed: {ex}");
+                Debug.LogError($"[WS] Connect failed: {ex}");
                 await CleanupAsync();
             }
         }
@@ -112,10 +122,9 @@ namespace Rpc.Testing
             var interval = Mathf.Max(0.1f, RequestIntervalSeconds);
 
             while (!_cts.IsCancellationRequested && !_stopped)
-            {
                 try
                 {
-                    await _player!.Move(new MoveRequest() { Direction = 1, PlayerId = Account });
+                    await _player!.Move(new MoveRequest { Direction = 1, PlayerId = Account });
                     if (_cts.IsCancellationRequested || _stopped)
                         return;
 
@@ -128,10 +137,9 @@ namespace Rpc.Testing
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[TCP] Polling failed: {ex.Message}");
+                    Debug.LogWarning($"[WS] Polling failed: {ex.Message}");
                     return;
                 }
-            }
         }
 
         private void HandleNotify(string message)
@@ -139,7 +147,7 @@ namespace Rpc.Testing
             if (_stopped)
                 return;
 
-            Debug.Log($"[TCP] Push: {message}");
+            Debug.Log($"[WS] Push: {message}");
         }
 
         private void BeginShutdown()
@@ -160,7 +168,6 @@ namespace Rpc.Testing
         private async Task CleanupAsync()
         {
             if (_pollingTask is not null)
-            {
                 try
                 {
                     await _pollingTask;
@@ -168,7 +175,6 @@ namespace Rpc.Testing
                 catch (OperationCanceledException)
                 {
                 }
-            }
 
             if (_connection is not null)
             {
@@ -186,9 +192,9 @@ namespace Rpc.Testing
             _connection = null;
 
             if (ex is null)
-                Debug.Log("[TCP] Disconnected.");
+                Debug.Log("[WS] Disconnected.");
             else
-                Debug.LogWarning($"[TCP] Disconnected: {ex.Message}");
+                Debug.LogWarning($"[WS] Disconnected: {ex.Message}");
         }
 
         private sealed class PlayerCallbacks : RpcClient.PlayerCallbackBase
@@ -207,4 +213,5 @@ namespace Rpc.Testing
         }
     }
 }
+
 
