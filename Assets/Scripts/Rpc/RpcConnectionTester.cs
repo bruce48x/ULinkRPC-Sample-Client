@@ -1,13 +1,10 @@
 #nullable enable
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Shared.Interfaces;
 using ULinkRPC.Client;
-using ULinkRPC.Serializer.MemoryPack;
-using ULinkRPC.Transport.WebSocket;
 using UnityEngine;
 
 namespace Rpc.Testing
@@ -58,8 +55,10 @@ namespace Rpc.Testing
         private bool _cleanupStarted;
         private RpcClient? _connection;
         private IPlayerService? _player;
+        private string _playerId = string.Empty;
         private Task? _pollingTask;
         private bool _stopped;
+        private int _tick;
 
         public RpcConnectionTester()
         {
@@ -107,7 +106,8 @@ namespace Rpc.Testing
                     Password = Password
                 });
 
-                Debug.Log($"[WS] Login ok: account={Account}, code={reply.Code}, token={reply.Token}");
+                _playerId = reply.PlayerId;
+                Debug.Log($"[WS] Login ok: account={Account}, playerId={reply.PlayerId}, code={reply.Code}, token={reply.Token}");
                 _pollingTask = RunPollingAsync();
             }
             catch (Exception ex)
@@ -124,11 +124,18 @@ namespace Rpc.Testing
             while (!_cts.IsCancellationRequested && !_stopped)
                 try
                 {
-                    await _player!.Move(new MoveRequest { Direction = 1, PlayerId = Account });
+                    await _player!.SubmitInput(new InputMessage
+                    {
+                        PlayerId = _playerId,
+                        MoveX = 1f,
+                        MoveY = 0f,
+                        Dash = false,
+                        Tick = ++_tick
+                    });
                     if (_cts.IsCancellationRequested || _stopped)
                         return;
 
-                    Debug.Log($"{Account} Moved");
+                    Debug.Log($"{Account} Input submitted");
                     await Task.Delay(TimeSpan.FromSeconds(interval), _cts.Token);
                 }
                 catch (OperationCanceledException)
@@ -140,14 +147,6 @@ namespace Rpc.Testing
                     Debug.LogWarning($"[WS] Polling failed: {ex.Message}");
                     return;
                 }
-        }
-
-        private void HandleNotify(string message)
-        {
-            if (_stopped)
-                return;
-
-            Debug.Log($"[WS] Push: {message}");
         }
 
         private void BeginShutdown()
@@ -206,10 +205,28 @@ namespace Rpc.Testing
                 _owner = owner;
             }
 
-            public override void OnMove(List<PlayerPosition> playerPositions)
+            public override void OnWorldState(WorldState worldState)
             {
-                Debug.Log($"OnMove {playerPositions.Count}");
+                _owner.HandleWorldState(worldState);
             }
+
+            public override void OnPlayerDead(PlayerDead deadEvent)
+            {
+                Debug.Log($"[WS] Player dead: {deadEvent.PlayerId} @ tick {deadEvent.Tick}");
+            }
+
+            public override void OnMatchEnd(MatchEnd matchEnd)
+            {
+                Debug.Log($"[WS] Match end: winner={matchEnd.WinnerPlayerId}, tick={matchEnd.Tick}");
+            }
+        }
+
+        private void HandleWorldState(WorldState worldState)
+        {
+            if (_stopped)
+                return;
+
+            Debug.Log($"[WS] WorldState tick={worldState.Tick}, players={worldState.Players.Count}");
         }
     }
 }

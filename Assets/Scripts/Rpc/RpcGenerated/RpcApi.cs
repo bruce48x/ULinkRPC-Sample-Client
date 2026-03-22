@@ -5,9 +5,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using Shared.Interfaces;
-using System.Collections.Generic;
 using ULinkRPC.Client;
 using ULinkRPC.Core;
 
@@ -81,8 +79,15 @@ namespace ULinkRPC.Client
 
         public abstract class PlayerCallbackBase : IPlayerCallback
         {
+            public virtual void OnWorldState(WorldState worldState)
+            {
+            }
 
-            public virtual void OnMove(List<PlayerPosition> playerPositions)
+            public virtual void OnPlayerDead(PlayerDead deadEvent)
+            {
+            }
+
+            public virtual void OnMatchEnd(MatchEnd matchEnd)
             {
             }
         }

@@ -15,7 +15,7 @@ namespace Rpc.Generated
     {
         private const int ServiceId = 1;
         private static readonly RpcMethod<LoginRequest, LoginReply> loginAsyncRpcMethod = new(ServiceId, 1);
-        private static readonly RpcMethod<MoveRequest, RpcVoid> moveRpcMethod = new(ServiceId, 2);
+        private static readonly RpcMethod<InputMessage, RpcVoid> submitInputRpcMethod = new(ServiceId, 2);
 
         private readonly IRpcClient _client;
 
@@ -31,14 +31,14 @@ namespace Rpc.Generated
             return _client.CallAsync(loginAsyncRpcMethod, req, ct);
         }
 
-        public async ValueTask Move(MoveRequest req)
+        public async ValueTask SubmitInput(InputMessage req)
         {
-            await Move(req, CancellationToken.None);
+            await SubmitInput(req, CancellationToken.None);
         }
 
-        public async ValueTask Move(MoveRequest req, CancellationToken ct)
+        public async ValueTask SubmitInput(InputMessage req, CancellationToken ct)
         {
-            await _client.CallAsync(moveRpcMethod, req, ct);
+            await _client.CallAsync(submitInputRpcMethod, req, ct);
         }
 
     }
