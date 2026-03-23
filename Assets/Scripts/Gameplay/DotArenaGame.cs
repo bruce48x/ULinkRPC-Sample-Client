@@ -25,6 +25,8 @@ namespace SampleClient.Gameplay
 
     public sealed class DotArenaGame : MonoBehaviour, IPlayerCallback
     {
+        private const int WindowWidth = 800;
+        private const int WindowHeight = 600;
         private const float ArenaHalfSize = 10f;
         private const float ArenaVisualPadding = 1.8f;
         private const float PlayerSize = 0.9f;
@@ -76,12 +78,20 @@ namespace SampleClient.Gameplay
         private string _eventMessage = "等待玩家加入";
         private float _eventMessageUntil;
         private int _lastWorldTick = -1;
+        private int _lastLoggedPlayerCount = -1;
 
         private async void Start()
         {
+            ApplyLaunchOverrides();
+            ConfigureWindow();
+            InitializeConnectionMode();
             ConfigureCamera();
             BuildArena();
-            await ConnectAsync();
+
+            if (ShouldAutoConnectOnStart())
+            {
+                await ConnectAsync();
+            }
         }
 
         private void Update()
@@ -102,7 +112,7 @@ namespace SampleClient.Gameplay
         private void OnGUI()
         {
             const float width = 400f;
-            const float height = 160f;
+            var height = ShouldShowConnectControls() ? 248f : 160f;
 
             var boxRect = new Rect(16f, 16f, width, height);
             var contentRect = new Rect(28f, 24f, width - 24f, height - 16f);
@@ -133,6 +143,17 @@ namespace SampleClient.Gameplay
                 $"服务端 Tick: {_lastWorldTick}   同步人数: {_views.Count}", bodyStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 84f, contentRect.width, 18f),
                 $"地址: {Rpc.WebSocketRpcClientFactory.BuildUrl(_host, _port, _path)}", bodyStyle);
+
+            if (ShouldShowConnectControls())
+            {
+                DrawConnectControls(contentRect, bodyStyle);
+                GUI.Label(new Rect(contentRect.x, contentRect.y + 192f, contentRect.width, 18f),
+                    $"事件: {GetCurrentEventMessage()}", bodyStyle);
+                GUI.Label(new Rect(contentRect.x, contentRect.y + 212f, contentRect.width, 18f),
+                    "连接成功后可用 W/A/S/D 移动, Space 冲刺。", bodyStyle);
+                return;
+            }
+
             GUI.Label(new Rect(contentRect.x, contentRect.y + 104f, contentRect.width, 18f),
                 "W/A/S/D 移动, Space 冲刺。客户端只发输入，位置以服务端广播为准。", bodyStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 124f, contentRect.width, 18f),
@@ -205,6 +226,7 @@ namespace SampleClient.Gameplay
                 _localPlayerId = string.IsNullOrWhiteSpace(reply.PlayerId) ? _account : reply.PlayerId;
                 _isConnected = true;
                 _status = $"Connected as {_localPlayerId}";
+                Debug.Log($"[DotArena] Connected as {_localPlayerId} -> {Rpc.WebSocketRpcClientFactory.BuildUrl(_host, _port, _path)}");
                 PushEvent("等待其他玩家加入");
             }
             catch (OperationCanceledException)
@@ -214,6 +236,7 @@ namespace SampleClient.Gameplay
             catch (Exception ex)
             {
                 _status = $"Connect failed: {ex.Message}";
+                Debug.LogError($"[DotArena] Connect failed: {ex}");
                 await DisposeConnectionAsync();
             }
             finally
@@ -280,6 +303,12 @@ namespace SampleClient.Gameplay
             }
 
             _lastWorldTick = worldState.Tick;
+            if (worldState.Players.Count != _lastLoggedPlayerCount)
+            {
+                _lastLoggedPlayerCount = worldState.Players.Count;
+                Debug.Log($"[DotArena] WorldState tick={worldState.Tick}, players={worldState.Players.Count}, local={_localPlayerId}");
+            }
+
             var activeIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var player in worldState.Players)
             {
@@ -417,7 +446,9 @@ namespace SampleClient.Gameplay
         {
             _isConnected = false;
             _playerService = null;
+            _localPlayerId = string.Empty;
             _status = ex == null ? "Disconnected" : $"Disconnected: {ex.Message}";
+            Debug.LogWarning($"[DotArena] {_status}");
         }
 
         private async Task DisposeConnectionAsync()
@@ -428,6 +459,7 @@ namespace SampleClient.Gameplay
             _connection = null;
             _playerService = null;
             _isConnected = false;
+            _localPlayerId = string.Empty;
 
             try
             {
@@ -458,6 +490,73 @@ namespace SampleClient.Gameplay
             mainCamera.clearFlags = CameraClearFlags.SolidColor;
             mainCamera.transform.position = new Vector3(0f, 0f, -10f);
             mainCamera.transform.rotation = Quaternion.identity;
+        }
+
+        private void ConfigureWindow()
+        {
+#if !UNITY_EDITOR && UNITY_STANDALONE_WIN
+            Screen.SetResolution(WindowWidth, WindowHeight, FullScreenMode.Windowed);
+#endif
+        }
+
+        private void InitializeConnectionMode()
+        {
+            if (ShouldAutoConnectOnStart())
+            {
+                _status = "Connecting...";
+                return;
+            }
+
+            _status = "Ready to connect";
+            _eventMessage = "请先输入账号密码";
+        }
+
+        private void ApplyLaunchOverrides()
+        {
+            var launchArguments = Rpc.RpcLaunchArguments.ReadCurrentProcess();
+            launchArguments.ApplyTo(ref _host, ref _port, ref _path);
+            launchArguments.ApplyCredentials(ref _account, ref _password);
+
+            if (launchArguments.HasOverrides)
+            {
+                Debug.Log($"[LaunchArgs] DotArenaGame host={_host}, port={_port}, path={_path}, account={_account}");
+            }
+        }
+
+        private bool ShouldAutoConnectOnStart()
+        {
+            return Application.isEditor;
+        }
+
+        private bool ShouldShowConnectControls()
+        {
+            return !Application.isEditor && !_isConnected;
+        }
+
+        private void DrawConnectControls(Rect contentRect, GUIStyle bodyStyle)
+        {
+            const float labelWidth = 64f;
+            const float fieldHeight = 22f;
+            var fieldWidth = contentRect.width - labelWidth - 12f;
+            var accountY = contentRect.y + 108f;
+            var passwordY = contentRect.y + 138f;
+            var buttonY = contentRect.y + 168f;
+
+            GUI.Label(new Rect(contentRect.x, accountY + 2f, labelWidth, 18f), "账号", bodyStyle);
+            GUI.Label(new Rect(contentRect.x, passwordY + 2f, labelWidth, 18f), "密码", bodyStyle);
+
+            var previousEnabled = GUI.enabled;
+            GUI.enabled = !_isConnecting;
+            _account = GUI.TextField(new Rect(contentRect.x + labelWidth, accountY, fieldWidth, fieldHeight), _account);
+            _password = GUI.PasswordField(new Rect(contentRect.x + labelWidth, passwordY, fieldWidth, fieldHeight), _password, '*');
+
+            var buttonLabel = _isConnecting ? "Connecting..." : "Connect";
+            if (GUI.Button(new Rect(contentRect.x, buttonY, 120f, 24f), buttonLabel))
+            {
+                _ = ConnectAsync();
+            }
+
+            GUI.enabled = previousEnabled;
         }
 
         private void BuildArena()

@@ -68,7 +68,9 @@ namespace Rpc.Testing
 
         private async void Start()
         {
-            if (!AutoConnect)
+            ApplyLaunchOverrides();
+
+            if (!Application.isEditor || !AutoConnect)
                 return;
 
             await ConnectAndTestAsync();
@@ -194,6 +196,18 @@ namespace Rpc.Testing
                 Debug.Log("[WS] Disconnected.");
             else
                 Debug.LogWarning($"[WS] Disconnected: {ex.Message}");
+        }
+
+        private void ApplyLaunchOverrides()
+        {
+            var launchArguments = Rpc.RpcLaunchArguments.ReadCurrentProcess();
+            launchArguments.ApplyTo(ref _endpoint.Host, ref _endpoint.Port, ref _endpoint.Path);
+            launchArguments.ApplyCredentials(ref Account, ref Password);
+
+            if (launchArguments.HasOverrides)
+            {
+                Debug.Log($"[LaunchArgs] RpcConnectionTester host={_endpoint.Host}, port={_endpoint.Port}, path={_endpoint.Path}, account={Account}");
+            }
         }
 
         private sealed class PlayerCallbacks : RpcClient.PlayerCallbackBase

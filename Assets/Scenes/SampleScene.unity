@@ -155,6 +155,7 @@ MonoBehaviour:
   _endpoint:
     Host: 127.0.0.1
     Port: 20000
+    Path: /ws
   Account: a
   Password: b
   RequestIntervalSeconds: 1
