@@ -35,6 +35,7 @@ namespace SampleClient.Editor
         [MenuItem("Tools/Build/Reimport Shared Package")]
         public static void ReimportSharedPackage()
         {
+            CleanupSharedBuildArtifacts();
             AssetDatabase.ImportAsset($"{PackageAssetRoot}/package.json", ImportAssetOptions.ForceUpdate);
             AssetDatabase.ImportAsset($"{PackageAssetRoot}/Shared.asmdef", ImportAssetOptions.ForceUpdate);
             AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
@@ -52,6 +53,35 @@ namespace SampleClient.Editor
             ReimportSharedPackage();
             throw new InvalidOperationException(
                 $"{reason} Unity has been asked to reimport the local shared package. Wait for compilation to finish, then build again.");
+        }
+
+        private static void CleanupSharedBuildArtifacts()
+        {
+            var projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
+            if (string.IsNullOrWhiteSpace(projectRoot))
+            {
+                return;
+            }
+
+            var sharedRoot = Path.Combine(projectRoot, "ulinkrpc-sample-server", "Shared");
+            DeleteIfExists(Path.Combine(sharedRoot, "bin"));
+            DeleteIfExists(Path.Combine(sharedRoot, "obj"));
+            DeleteIfExists(Path.Combine(sharedRoot, "bin.meta"));
+            DeleteIfExists(Path.Combine(sharedRoot, "obj.meta"));
+        }
+
+        private static void DeleteIfExists(string path)
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
 
         private static bool TryGetStaleReason(out string reason)
