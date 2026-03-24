@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
+using UnityEngine;
 
 namespace SampleClient.Editor
 {
@@ -19,6 +20,9 @@ namespace SampleClient.Editor
 
         public static BuildResultData BuildWindowsClient(string outputDirectory, string executableName)
         {
+            SharedPackageSync.EnsureFreshForBuild();
+            ConfigureWindowsPlayerSettings();
+
             var fullOutputDirectory = Path.GetFullPath(outputDirectory);
             Directory.CreateDirectory(fullOutputDirectory);
             var outputPath = Path.Combine(fullOutputDirectory, executableName);
@@ -52,6 +56,14 @@ namespace SampleClient.Editor
 
             Console.WriteLine(result.Message);
             return result;
+        }
+
+        private static void ConfigureWindowsPlayerSettings()
+        {
+            PlayerSettings.defaultScreenWidth = 1600;
+            PlayerSettings.defaultScreenHeight = 800;
+            PlayerSettings.resizableWindow = true;
+            PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         }
     }
 

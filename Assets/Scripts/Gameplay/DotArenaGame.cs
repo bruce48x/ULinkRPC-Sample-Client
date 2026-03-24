@@ -25,11 +25,21 @@ namespace SampleClient.Gameplay
 
     public sealed class DotArenaGame : MonoBehaviour, IPlayerCallback
     {
-        private const int WindowWidth = 800;
-        private const int WindowHeight = 600;
+        private const int WindowWidth = 1600;
+        private const int WindowHeight = 800;
         private const float ArenaHalfSize = 10f;
         private const float ArenaVisualPadding = 1.8f;
-        private const float PlayerSize = 0.9f;
+        // Keep this aligned with the server-side collision radius in GameArenaRuntime.
+        private const float PlayerRadius = 0.9f;
+        private const float PlayerDiameter = PlayerRadius * 2f;
+        private const float PlayerNameOffsetY = 0.1f;
+        private const float PlayerScoreOffsetY = -0.14f;
+        private const int PlayerSortingOrder = 20;
+        private const int PlayerTextSortingOrder = 30;
+        private const float PlayerTextDepth = -0.2f;
+        private const float PlayerNameScale = 0.12f;
+        private const float PlayerScoreScale = 0.1f;
+        private const float PlayerTextCharacterSize = 0.08f;
         private const float InputSendIntervalSeconds = 0.05f;
         private const float InterpolationDurationSeconds = 0.1f;
 
@@ -74,11 +84,13 @@ namespace SampleClient.Gameplay
         private MatchEnd? _pendingMatchEnd;
 
         private Sprite _pixelSprite = null!;
+        private Sprite _playerSprite = null!;
         private string _status = "Connecting...";
         private string _eventMessage = "等待玩家加入";
         private float _eventMessageUntil;
         private int _lastWorldTick = -1;
         private int _lastLoggedPlayerCount = -1;
+        private bool _applicationQuitting;
 
         private async void Start()
         {
@@ -104,9 +116,19 @@ namespace SampleClient.Gameplay
 
         private void OnDestroy()
         {
-            _cts.Cancel();
-            _ = DisposeConnectionAsync();
+            if (!_applicationQuitting)
+            {
+                _cts.Cancel();
+                _ = DisposeConnectionAsync();
+            }
+
             _cts.Dispose();
+        }
+
+        private void OnApplicationQuit()
+        {
+            _applicationQuitting = true;
+            DisposeConnectionSynchronously();
         }
 
         private void OnGUI()
@@ -138,7 +160,7 @@ namespace SampleClient.Gameplay
             GUI.Label(new Rect(contentRect.x, contentRect.y, contentRect.width, 24f), "ULinkRPC Dot Arena", titleStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 24f, contentRect.width, 18f), $"状态: {_status}", bodyStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 44f, contentRect.width, 18f),
-                $"玩家: {(_localPlayerId.Length > 0 ? _localPlayerId : _account)}", bodyStyle);
+                $"玩家: {(_localPlayerId.Length > 0 ? _localPlayerId : _account)}   积分: {GetLocalPlayerScoreText()}", bodyStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 64f, contentRect.width, 18f),
                 $"服务端 Tick: {_lastWorldTick}   同步人数: {_views.Count}", bodyStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 84f, contentRect.width, 18f),
@@ -158,8 +180,65 @@ namespace SampleClient.Gameplay
                 "W/A/S/D 移动, Space 冲刺。客户端只发输入，位置以服务端广播为准。", bodyStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 124f, contentRect.width, 18f),
                 $"事件: {GetCurrentEventMessage()}", bodyStyle);
+
+            DrawPlayerOverlays();
         }
 
+        private void DrawPlayerOverlays()
+        {
+            var camera = Camera.main;
+            if (camera == null || _views.Count == 0)
+            {
+                return;
+            }
+
+            var pixelsPerWorldUnit = Screen.height / (camera.orthographicSize * 2f);
+            var diameterPixels = PlayerDiameter * pixelsPerWorldUnit;
+            var labelWidth = Mathf.Max(96f, diameterPixels * 2f);
+            var nameHeight = Mathf.Max(18f, diameterPixels * 0.36f);
+            var scoreHeight = Mathf.Max(16f, diameterPixels * 0.3f);
+
+            var nameStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold,
+                fontSize = Mathf.RoundToInt(Mathf.Clamp(diameterPixels * 0.24f, 14f, 22f)),
+                clipping = TextClipping.Overflow,
+                normal = { textColor = new Color(0.94f, 0.97f, 1f, 1f) }
+            };
+
+            var scoreStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold,
+                fontSize = Mathf.RoundToInt(Mathf.Clamp(diameterPixels * 0.22f, 13f, 20f)),
+                clipping = TextClipping.Overflow,
+                normal = { textColor = new Color(1f, 0.97f, 0.78f, 1f) }
+            };
+
+            foreach (var entry in _views)
+            {
+                if (!_renderStates.TryGetValue(entry.Key, out var renderState))
+                {
+                    continue;
+                }
+
+                var worldPosition = entry.Value.Root.transform.position;
+                var screenPosition = camera.WorldToScreenPoint(worldPosition);
+                if (screenPosition.z <= 0f)
+                {
+                    continue;
+                }
+
+                var centerX = screenPosition.x;
+                var centerY = Screen.height - screenPosition.y;
+                var nameRect = new Rect(centerX - (labelWidth * 0.5f), centerY - (nameHeight * 1.05f), labelWidth, nameHeight);
+                var scoreRect = new Rect(centerX - (labelWidth * 0.5f), centerY + (scoreHeight * 0.05f), labelWidth, scoreHeight);
+
+                GUI.Label(nameRect, entry.Key, nameStyle);
+                GUI.Label(scoreRect, $"score: {FormatScore(renderState.Score)}", scoreStyle);
+            }
+        }
         public void OnWorldState(WorldState worldState)
         {
             lock (_callbackLock)
@@ -333,8 +412,10 @@ namespace SampleClient.Gameplay
                 renderState.ReceivedAt = Time.time;
                 renderState.Alive = player.Alive;
                 renderState.State = player.State;
+                renderState.Score = player.Score;
 
-                view.ApplyPresentation(player.PlayerId == _localPlayerId, ResolveColor(player.PlayerId), player.State, player.Alive);
+                view.SetIdentity(player.PlayerId, player.Score);
+                view.ApplyPresentation(ResolveColor(player.PlayerId), player.State, player.Alive);
                 if (_views.Count >= 2 && worldState.Players.Exists(static p => p.Alive))
                 {
                     _eventMessage = "对局进行中";
@@ -368,7 +449,7 @@ namespace SampleClient.Gameplay
 
             if (_views.TryGetValue(deadEvent.PlayerId, out var view))
             {
-                view.ApplyPresentation(deadEvent.PlayerId == _localPlayerId, ResolveColor(deadEvent.PlayerId), PlayerLifeState.Dead, false);
+                view.ApplyPresentation(ResolveColor(deadEvent.PlayerId), PlayerLifeState.Dead, false);
             }
 
             PushEvent(deadEvent.PlayerId == _localPlayerId
@@ -456,15 +537,42 @@ namespace SampleClient.Gameplay
             if (_connection == null) return;
 
             var connection = _connection;
+            var playerService = _playerService;
+            var shouldLogout = _isConnected && playerService != null;
             _connection = null;
-            _playerService = null;
-            _isConnected = false;
-            _localPlayerId = string.Empty;
+
+            try
+            {
+                if (shouldLogout)
+                {
+                    await playerService!.LogoutAsync();
+                }
+            }
+            catch
+            {
+            }
 
             try
             {
                 connection.Disconnected -= OnDisconnected;
                 await connection.DisposeAsync();
+            }
+            catch
+            {
+            }
+            finally
+            {
+                _playerService = null;
+                _isConnected = false;
+                _localPlayerId = string.Empty;
+            }
+        }
+
+        private void DisposeConnectionSynchronously()
+        {
+            try
+            {
+                DisposeConnectionAsync().GetAwaiter().GetResult();
             }
             catch
             {
@@ -562,6 +670,7 @@ namespace SampleClient.Gameplay
         private void BuildArena()
         {
             _pixelSprite = CreatePixelSprite();
+            _playerSprite = CreateCircleSprite();
 
             var arenaRoot = new GameObject("ArenaRoot");
             arenaRoot.transform.SetParent(transform, false);
@@ -610,33 +719,50 @@ namespace SampleClient.Gameplay
             viewRoot.transform.SetParent(transform, false);
 
             var renderer = viewRoot.AddComponent<SpriteRenderer>();
-            renderer.sprite = _pixelSprite;
+            renderer.sprite = _playerSprite;
             renderer.color = ResolveColor(playerId);
-            renderer.sortingOrder = 20;
+            renderer.sortingOrder = PlayerSortingOrder;
 
-            var label = new GameObject("Label");
-            label.transform.SetParent(viewRoot.transform, false);
-            label.transform.localPosition = new Vector3(0f, 0.9f, 0f);
+            var nameLabel = new GameObject("NameLabel");
+            nameLabel.transform.SetParent(viewRoot.transform, false);
+            nameLabel.transform.localPosition = new Vector3(0f, PlayerNameOffsetY, PlayerTextDepth);
+            nameLabel.transform.localScale = Vector3.one * PlayerNameScale;
 
-            var text = label.AddComponent<TextMesh>();
-            text.text = playerId;
-            text.fontSize = 32;
-            text.characterSize = 0.08f;
-            text.anchor = TextAnchor.MiddleCenter;
-            text.alignment = TextAlignment.Center;
-            text.color = new Color(0.92f, 0.96f, 1f, 0.88f);
+            var nameText = nameLabel.AddComponent<TextMesh>();
+            nameText.text = playerId;
+            nameText.fontSize = 48;
+            nameText.characterSize = PlayerTextCharacterSize;
+            nameText.anchor = TextAnchor.MiddleCenter;
+            nameText.alignment = TextAlignment.Center;
+            nameText.fontStyle = FontStyle.Bold;
+            nameText.color = new Color(0.92f, 0.96f, 1f, 0.92f);
+            ConfigureTextRenderer(nameText.GetComponent<MeshRenderer>(), PlayerTextSortingOrder);
 
-            var view = new DotView(viewRoot, renderer);
-            view.ApplyPresentation(playerId == _localPlayerId, ResolveColor(playerId), PlayerLifeState.Idle, true);
+            var scoreLabel = new GameObject("ScoreLabel");
+            scoreLabel.transform.SetParent(viewRoot.transform, false);
+            scoreLabel.transform.localPosition = new Vector3(0f, PlayerScoreOffsetY, PlayerTextDepth);
+            scoreLabel.transform.localScale = Vector3.one * PlayerScoreScale;
+
+            var scoreText = scoreLabel.AddComponent<TextMesh>();
+            scoreText.text = "1";
+            scoreText.fontSize = 44;
+            scoreText.characterSize = PlayerTextCharacterSize;
+            scoreText.anchor = TextAnchor.MiddleCenter;
+            scoreText.alignment = TextAlignment.Center;
+            scoreText.fontStyle = FontStyle.Bold;
+            scoreText.color = new Color(1f, 0.97f, 0.78f, 0.95f);
+            ConfigureTextRenderer(scoreText.GetComponent<MeshRenderer>(), PlayerTextSortingOrder);
+
+            var view = new DotView(viewRoot, renderer, nameText, scoreText);
+            view.SetIdentity(playerId, 1);
+            view.ApplyPresentation(ResolveColor(playerId), PlayerLifeState.Idle, true);
             return view;
         }
 
         private Color ResolveColor(string playerId)
         {
-            if (playerId == _localPlayerId) return RemotePalette[0];
-
-            var index = Mathf.Abs(playerId.GetHashCode()) % (RemotePalette.Length - 1);
-            return RemotePalette[index + 1];
+            var index = GetStableColorIndex(playerId);
+            return RemotePalette[index];
         }
 
         private void CreateRect(Transform parent, string objectName, Vector2 position, Vector2 size, Color color,
@@ -651,6 +777,32 @@ namespace SampleClient.Gameplay
             renderer.sprite = _pixelSprite;
             renderer.color = color;
             renderer.sortingOrder = sortingOrder;
+        }
+
+        private static void ConfigureTextRenderer(MeshRenderer? renderer, int sortingOrder)
+        {
+            if (renderer == null)
+            {
+                return;
+            }
+
+            renderer.sortingOrder = sortingOrder;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+        }
+
+        private string GetLocalPlayerScoreText()
+        {
+            if (_localPlayerId.Length == 0)
+            {
+                return "0";
+            }
+
+            return _renderStates.TryGetValue(_localPlayerId, out var renderState)
+                ? FormatScore(renderState.Score)
+                : "0";
         }
 
         private string GetCurrentEventMessage()
@@ -681,7 +833,8 @@ namespace SampleClient.Gameplay
         {
             var clone = new WorldState
             {
-                Tick = source.Tick
+                Tick = source.Tick,
+                RespawnDelaySeconds = source.RespawnDelaySeconds
             };
 
             foreach (var player in source.Players)
@@ -694,7 +847,9 @@ namespace SampleClient.Gameplay
                     Vx = player.Vx,
                     Vy = player.Vy,
                     State = player.State,
-                    Alive = player.Alive
+                    Alive = player.Alive,
+                    RespawnRemainingSeconds = player.RespawnRemainingSeconds,
+                    Score = player.Score
                 });
             }
 
@@ -716,6 +871,61 @@ namespace SampleClient.Gameplay
             return Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f), 1f);
         }
 
+        private static Sprite CreateCircleSprite()
+        {
+            const int textureSize = 64;
+            var texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+
+            var center = (textureSize - 1) * 0.5f;
+            var radius = textureSize * 0.5f;
+            var edgeSoftness = 1.25f;
+
+            for (var y = 0; y < textureSize; y++)
+            {
+                for (var x = 0; x < textureSize; x++)
+                {
+                    var dx = x - center;
+                    var dy = y - center;
+                    var distance = Mathf.Sqrt((dx * dx) + (dy * dy));
+                    var alpha = Mathf.Clamp01((radius - distance) / edgeSoftness);
+                    texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            texture.Apply();
+
+            return Sprite.Create(
+                texture,
+                new Rect(0f, 0f, textureSize, textureSize),
+                new Vector2(0.5f, 0.5f),
+                textureSize);
+        }
+
+        private static int GetStableColorIndex(string playerId)
+        {
+            unchecked
+            {
+                var hash = 2166136261u;
+                foreach (var ch in playerId)
+                {
+                    hash ^= ch;
+                    hash *= 16777619u;
+                }
+
+                return (int)(hash % (uint)RemotePalette.Length);
+            }
+        }
+
+        private static string FormatScore(int score)
+        {
+            return score.ToString();
+        }
+
         private sealed class PlayerRenderState
         {
             public Vector2 PreviousPosition { get; set; }
@@ -723,16 +933,21 @@ namespace SampleClient.Gameplay
             public float ReceivedAt { get; set; }
             public PlayerLifeState State { get; set; }
             public bool Alive { get; set; }
+            public int Score { get; set; }
         }
 
         private sealed class DotView
         {
             private readonly SpriteRenderer _renderer;
+            private readonly TextMesh _nameText;
+            private readonly TextMesh _scoreText;
 
-            public DotView(GameObject root, SpriteRenderer renderer)
+            public DotView(GameObject root, SpriteRenderer renderer, TextMesh nameText, TextMesh scoreText)
             {
                 Root = root;
                 _renderer = renderer;
+                _nameText = nameText;
+                _scoreText = scoreText;
             }
 
             public GameObject Root { get; }
@@ -748,7 +963,13 @@ namespace SampleClient.Gameplay
                 Root.transform.position = new Vector3(position.x, position.y, 0f);
             }
 
-            public void ApplyPresentation(bool isLocalPlayer, Color baseColor, PlayerLifeState state, bool alive)
+            public void SetIdentity(string playerId, int score)
+            {
+                _nameText.text = playerId;
+                _scoreText.text = FormatScore(score);
+            }
+
+            public void ApplyPresentation(Color baseColor, PlayerLifeState state, bool alive)
             {
                 var color = baseColor;
                 if (!alive)
@@ -765,20 +986,18 @@ namespace SampleClient.Gameplay
                 }
 
                 _renderer.color = color;
-
-                var scale = PlayerSize;
-                if (isLocalPlayer)
-                {
-                    scale += 0.08f;
-                }
-
-                if (state == PlayerLifeState.Dash)
-                {
-                    scale += 0.12f;
-                }
-
-                Root.transform.localScale = new Vector3(scale, scale, 1f);
+                Root.transform.localScale = new Vector3(PlayerDiameter, PlayerDiameter, 1f);
             }
         }
     }
 }
+
+
+
+
+
+
+
+
+
+

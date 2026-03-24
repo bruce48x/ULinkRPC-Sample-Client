@@ -2,6 +2,7 @@
 
 using System;
 using ULinkRPC.Client;
+using ULinkRPC.Core;
 using ULinkRPC.Serializer.MemoryPack;
 using ULinkRPC.Transport.WebSocket;
 
@@ -14,7 +15,15 @@ namespace Rpc
             return new RpcClient(
                 new RpcClientOptions(
                     new WsTransport(BuildUrl(host, port, path)),
-                    new MemoryPackRpcSerializer()),
+                    new MemoryPackRpcSerializer())
+                {
+                    KeepAlive = new RpcKeepAliveOptions
+                    {
+                        Enabled = true,
+                        Interval = TimeSpan.FromSeconds(5),
+                        Timeout = TimeSpan.FromSeconds(15)
+                    }
+                },
                 callbacks);
         }
 
@@ -34,3 +43,5 @@ namespace Rpc
         }
     }
 }
+
+
